@@ -11,6 +11,7 @@ lazy val root = (project in file("."))
       "dev.vhonta"    %% "zio-temporal-protobuf" % "0.2.0-RC1",
       "dev.vhonta"    %% "zio-temporal-testkit"  % "0.2.0-RC1",
       "dev.zio"       %% "zio-test"              % "2.0.13" % Test,
+      "dev.zio"       %% "zio-test-sbt"          % "2.0.13" % Test,
       "ch.qos.logback" % "logback-classic"       % "1.4.7"  % Test,
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
