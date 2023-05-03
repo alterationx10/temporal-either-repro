@@ -1,4 +1,4 @@
-import com.fasterxml.jackson.databind.json.JsonMapper
+import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.scala.{ClassTagExtensions, DefaultScalaModule}
 import io.temporal.activity.{ActivityInterface, ActivityMethod}
@@ -49,6 +49,32 @@ case class TestWorkflowImpl() extends TestWorkflow {
 }
 
 object TemporalEitherSpec extends ZIOSpecDefault {
+
+  val dataConverter = {
+    val mapper: ObjectMapper with ClassTagExtensions = {
+      val _mapper = new ObjectMapper() with ClassTagExtensions
+      _mapper.registerModule(DefaultScalaModule)
+      _mapper.registerModule(new JavaTimeModule)
+      _mapper.findAndRegisterModules()
+      _mapper.configure(
+        DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
+        false,
+      )
+
+      _mapper
+    }
+
+    val scalaJacksonJsonPayloadConverter: JacksonJsonPayloadConverter =
+      new JacksonJsonPayloadConverter(
+        mapper,
+      )
+
+    val dataConverter: DefaultDataConverter = DefaultDataConverter
+      .newDefaultInstance()
+      .withPayloadConverterOverrides(scalaJacksonJsonPayloadConverter)
+    dataConverter
+  }
+
   override def spec: Spec[TestEnvironment with Scope, Any] = suite("repro")(
     test("either") {
       for {
@@ -64,20 +90,26 @@ object TemporalEitherSpec extends ZIOSpecDefault {
         _      <- ZTestWorkflowEnvironment.setup()
         stub   <-
           ZTestWorkflowEnvironment
-            .newWorkflowStub[TestWorkflow]
-            .withTaskQueue("repro")
-            .withWorkflowId(UUID.randomUUID().toString)
-            .withRetryOptions(ZRetryOptions.default.withMaximumAttempts(1))
-            .build
-        result <- ZWorkflowStub.execute(
-                    stub.start,
-                  )
+            .workflowClientWithZIO[Any, Throwable, ZWorkflowStub.Of[
+              TestWorkflow,
+            ]] { client =>
+              client
+                .newWorkflowStub[TestWorkflow]
+                .withTaskQueue("repro")
+                .withWorkflowId(UUID.randomUUID().toString)
+                .withRetryOptions(ZRetryOptions.default.withMaximumAttempts(1))
+                .build
+
+            }
+        result <- ZWorkflowStub.execute(stub.start)
       } yield assertTrue(result == Right(42))
     },
   ).provide(
     Scope.default,
     ZWorkerFactoryOptions.make,
-    ZWorkflowClientOptions.make,
+    ZWorkflowClientOptions.make @@ ZWorkflowClientOptions.withDataConverter(
+      dataConverter,
+    ),
     ZTestEnvironmentOptions.make,
     ZTestWorkflowEnvironment.make[Any],
   )
